@@ -1,4 +1,8 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -32,14 +36,15 @@ namespace JustEat.StatsD.Buffered
                     + MaxSerializedDoubleSymbols;
         }
 
-        public bool TryFormat(in StatsDMessage msg, double sampleRate, Span<byte> destination, out int written)
+        public bool TryFormat(in StatsDMessage msg, double sampleRate, IEnumerable<KeyValuePair<string, string>> tags, Span<byte> destination, out int written)
         {
             var buffer = new Buffer(destination);
 
             bool isFormattingSuccessful =
                   TryWriteBucketNameWithColon(ref buffer, msg.StatBucket)
                && TryWritePayloadWithMessageKindSuffix(ref buffer, msg)
-               && TryWriteSampleRateIfNeeded(ref buffer, sampleRate);
+               && TryWriteSampleRateIfNeeded(ref buffer, sampleRate)
+               && TryWriteTagsIfNeeded(ref buffer, tags);
 
             written = isFormattingSuccessful ? buffer.Written : 0;
             return isFormattingSuccessful;
@@ -102,6 +107,30 @@ namespace JustEat.StatsD.Buffered
             }
 
             return true;
+        }
+
+        private static bool TryWriteTagsIfNeeded(ref Buffer buffer, IEnumerable<KeyValuePair<string, string>> tags)
+        {
+            // {<optional> "#tag1:value1,tag2=value2"
+            var tagsArray = tags as KeyValuePair<string, string>[] ?? tags.ToArray();
+            if (!tagsArray.Any())
+            {
+                return true;
+            }
+
+            var sb = new StringBuilder("#");
+            var lastIndex = tagsArray.Length - 1;
+            for (var i = 0; i < tagsArray.Length; i++)
+            {
+                var tag = tagsArray[i];
+                sb.AppendFormat(CultureInfo.InvariantCulture, "{0}:{1}", tag.Key, tag.Value);
+                if (i != lastIndex)
+                {
+                    sb.Append(",");
+                }
+            }
+
+            return buffer.TryWriteUtf8String(sb.ToString());
         }
     }
 }

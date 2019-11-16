@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace JustEat.StatsD
 {
@@ -50,6 +51,11 @@ namespace JustEat.StatsD
         /// Gets or sets an optional prefix to use for all stats.
         /// </summary>
         public string Prefix { get; set; } = string.Empty;
+
+        /// <summary>
+        /// CloudWatch specific tags. They will be added into all request.
+        /// </summary>
+        public IList<KeyValuePair<string, string>> Tags { get; set; }
 
         /// <summary>
         /// Gets or sets an optional delegate to invoke when an error occurs

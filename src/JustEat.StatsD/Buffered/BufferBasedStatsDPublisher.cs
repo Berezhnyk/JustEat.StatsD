@@ -1,4 +1,7 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace JustEat.StatsD.Buffered
 {
@@ -17,6 +20,7 @@ namespace JustEat.StatsD.Buffered
 
         private readonly StatsDUtf8Formatter _formatter;
         private readonly IStatsDTransport _transport;
+        private readonly IList<KeyValuePair<string, string>> _defaultTags;
         private readonly Func<Exception, bool>? _onError;
 
         internal BufferBasedStatsDPublisher(StatsDConfiguration configuration, IStatsDTransport transport)
@@ -28,25 +32,40 @@ namespace JustEat.StatsD.Buffered
 
             _onError = configuration.OnError;
             _transport = transport;
+            _defaultTags = configuration.Tags ?? new List<KeyValuePair<string, string>>();
             _formatter = new StatsDUtf8Formatter(configuration.Prefix);
         }
 
-        public void Increment(long value, double sampleRate, string bucket)
+        public void Increment(long value, double sampleRate, string bucket, IList<KeyValuePair<string, string>> tags = null)
         {
-            SendMessage(sampleRate, StatsDMessage.Counter(value, bucket));
+            SendMessage(sampleRate, ConcatTags(tags), StatsDMessage.Counter(value, bucket));
         }
 
-        public void Gauge(double value, string bucket)
+        public void Gauge(double value, string bucket, IList<KeyValuePair<string, string>> tags = null)
         {
-            SendMessage(DefaultSampleRate, StatsDMessage.Gauge(value, bucket));
+            SendMessage(DefaultSampleRate, ConcatTags(tags), StatsDMessage.Gauge(value, bucket));
         }
 
-        public void Timing(long duration, double sampleRate, string bucket)
+        public void Timing(long duration, double sampleRate, string bucket, IList<KeyValuePair<string, string>> tags = null)
         {
-            SendMessage(sampleRate, StatsDMessage.Timing(duration, bucket));
+            SendMessage(sampleRate, ConcatTags(tags), StatsDMessage.Timing(duration, bucket));
         }
 
-        private void SendMessage(double sampleRate, in StatsDMessage msg)
+        private IList<KeyValuePair<string, string>> ConcatTags(IList<KeyValuePair<string, string>> tags)
+        {
+            if (tags != null)
+            {
+                tags = (IList<KeyValuePair<string, string>>) tags.Concat(_defaultTags);
+            }
+            else
+            {
+                tags = _defaultTags;
+            }
+
+            return tags;
+        }
+
+        private void SendMessage(double sampleRate, IList<KeyValuePair<string, string>> tags, in StatsDMessage msg)
         {
             bool shouldSendMessage = (sampleRate >= DefaultSampleRate || sampleRate > Random.NextDouble()) && msg.StatBucket != null;
 
@@ -59,7 +78,7 @@ namespace JustEat.StatsD.Buffered
             {
                 var buffer = Buffer;
 
-                if (_formatter.TryFormat(msg, sampleRate, buffer, out int written))
+                if (_formatter.TryFormat(msg, sampleRate, tags, buffer, out int written))
                 {
                     _transport.Send(new ArraySegment<byte>(buffer, 0, written));
                 }
@@ -69,7 +88,7 @@ namespace JustEat.StatsD.Buffered
 
                     _buffer = new byte[newSize];
 
-                    if (_formatter.TryFormat(msg, sampleRate, _buffer, out written))
+                    if (_formatter.TryFormat(msg, sampleRate, tags, _buffer, out written))
                     {
                         _transport.Send(new ArraySegment<byte>(_buffer, 0, written));
                     }
